@@ -11,7 +11,7 @@
 start:
   cli                         # BIOS enabled interrupts; disable
 
-  # Zero data segment registers DS, ES, and SS.
+  # Zero data segment registers DS, ES, and SS. This helps in setting all segment registers to a known value. Can't set CS explicitly. Moreover it already points to the bootloader right now
   xorw    %ax,%ax             # Set %ax to zero
   movw    %ax,%ds             # -> Data Segment
   movw    %ax,%es             # -> Extra Segment
@@ -19,13 +19,17 @@ start:
 
   # Physical address line A20 is tied to zero so that the first PCs 
   # with 2 MB would run software that assumed 1 MB.  Undo that.
+  # 0x64 tells whether the controller is busy (ie. whether the input buffer is full)
+  # 0xD1 is a command saying that 'next byte goes to the output port'
+  # then check for not busy again
+  # then finally send the data to output port 0x60 which enables the A20 line
 seta20.1:
-  inb     $0x64,%al               # Wait for not busy
-  testb   $0x2,%al
+  inb     $0x64,%al               # Wait for not busy. 0x2 has a set bit indicating input buffer full.  
+  testb   $0x2,%al                # if and of al and 0x2 is non zero (ie. input buffer is full, loop)
   jnz     seta20.1
 
-  movb    $0xd1,%al               # 0xd1 -> port 0x64
-  outb    %al,$0x64
+  movb    $0xd1,%al              # 0xd1 -> port 0x64. register al contains the value to be sent ie. 0xd1
+  outb    %al,$0x64              # send value from register al to port 0x64
 
 seta20.2:
   inb     $0x64,%al               # Wait for not busy
@@ -39,15 +43,16 @@ seta20.2:
   # virtual addresses map directly to physical addresses so that the
   # effective memory map doesn't change during the transition.
   lgdt    gdtdesc
-  movl    %cr0, %eax
-  orl     $CR0_PE, %eax
-  movl    %eax, %cr0
+  movl    %cr0, %eax       # cr0 is a control register and holds system flags. copy to eax to modify it
+  orl     $CR0_PE, %eax          # PE- protection enable. OR the CR0_PE (which is 0x1) with value in eax
+  movl    %eax, %cr0             # move value in eax back to cr0
 
 //PAGEBREAK!
   # Complete the transition to 32-bit protected mode by using a long jmp
   # to reload %cs and %eip.  The segment descriptors are set up with no
   # translation, so that the mapping is still the identity mapping.
-  ljmp    $(SEG_KCODE<<3), $start32
+  ljmp    $(SEG_KCODE<<3), $start32     # this is just reloading cs with a valid protected mode selector
+                                        # which is SEG_KCODE<<3. eip is reloaded with the start of the 32 bit mode section which is start32
 
 .code32  # Tell assembler to generate 32-bit code now.
 start32:
@@ -84,4 +89,3 @@ gdt:
 gdtdesc:
   .word   (gdtdesc - gdt - 1)             # sizeof(gdt) - 1
   .long   gdt                             # address gdt
-
