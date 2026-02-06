@@ -1,0 +1,558 @@
+diff --git a/Makefile b/Makefile
+index 1e33fb4..9442b3f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,4 +1,7 @@
+-OBJS = main.o
++OBJS = main.o\
++				console.o\
++				uart.o\
++				string.o
+ 
+ # Cross-compiling (e.g., on Mac OS X)
+ # TOOLPREFIX = i386-jos-elf
+@@ -6,12 +9,25 @@ OBJS = main.o
+ # Using native tools (e.g., on X86 Linux)
+ #TOOLPREFIX = 
+ 
++# For ARM based MacOS machines
++# Workaround for newer gcc versions
++MAC_CCFLAGS := $(shell if [[ "$(shell uname -s)" == "Darwin" && "$(shell uname -m)" == "arm64" ]]; then \
++	echo "-Wno-error=infinite-recursion -Wno-error=array-bounds"; \
++	else \
++	echo ""; \
++fi)
++
++
+ # Try to infer the correct TOOLPREFIX if not set
+ ifndef TOOLPREFIX
+ TOOLPREFIX := $(shell if i386-jos-elf-objdump -i 2>&1 | grep '^elf32-i386$$' >/dev/null 2>&1; \
+ 	then echo 'i386-jos-elf-'; \
+ 	elif objdump -i 2>&1 | grep 'elf32-i386' >/dev/null 2>&1; \
+ 	then echo ''; \
++	elif i686-elf-objdump -i 2>&1 | grep 'elf32-i386' >/dev/null 2>&1; \
++	then echo 'i686-elf-'; \
++	elif i386-elf-objdump -i 2>&1 | grep 'elf32-i386' >/dev/null 2>&1; \
++	then echo 'i386-elf-'; \
+ 	else echo "***" 1>&2; \
+ 	echo "*** Error: Couldn't find an i386-*-elf version of GCC/binutils." 1>&2; \
+ 	echo "*** Is the directory with i386-jos-elf-gcc in your PATH?" 1>&2; \
+@@ -49,6 +65,7 @@ LD = $(TOOLPREFIX)ld
+ OBJCOPY = $(TOOLPREFIX)objcopy
+ OBJDUMP = $(TOOLPREFIX)objdump
+ CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
++CFLAGS += $(MAC_CCFLAGS)
+ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
+ # FreeBSD ld wants ``elf_i386_fbsd''
+@@ -116,4 +133,4 @@ qemu: xv6.img
+ 
+ qemu-gdb: xv6.img .gdbinit
+ 	@echo "*** Now run 'gdb'." 1>&2
+-	$(QEMU) -nographic $(QEMUOPTS) -S $(QEMUGDB)
+\ No newline at end of file
++	$(QEMU) -nographic $(QEMUOPTS) -S $(QEMUGDB)
+diff --git a/bootasm.S b/bootasm.S
+index 3659458..7feb21b 100644
+--- a/bootasm.S
++++ b/bootasm.S
+@@ -11,7 +11,7 @@
+ start:
+   cli                         # BIOS enabled interrupts; disable
+ 
+-  # Zero data segment registers DS, ES, and SS. This helps in setting all segment registers to a known value. Can't set CS explicitly. Moreover it already points to the bootloader right now
++  # Zero data segment registers DS, ES, and SS.
+   xorw    %ax,%ax             # Set %ax to zero
+   movw    %ax,%ds             # -> Data Segment
+   movw    %ax,%es             # -> Extra Segment
+@@ -19,17 +19,13 @@ start:
+ 
+   # Physical address line A20 is tied to zero so that the first PCs 
+   # with 2 MB would run software that assumed 1 MB.  Undo that.
+-  # 0x64 tells whether the controller is busy (ie. whether the input buffer is full)
+-  # 0xD1 is a command saying that 'next byte goes to the output port'
+-  # then check for not busy again
+-  # then finally send the data to output port 0x60 which enables the A20 line
+ seta20.1:
+-  inb     $0x64,%al               # Wait for not busy. 0x2 has a set bit indicating input buffer full.  
+-  testb   $0x2,%al                # if and of al and 0x2 is non zero (ie. input buffer is full, loop)
++  inb     $0x64,%al               # Wait for not busy
++  testb   $0x2,%al
+   jnz     seta20.1
+ 
+-  movb    $0xd1,%al              # 0xd1 -> port 0x64. register al contains the value to be sent ie. 0xd1
+-  outb    %al,$0x64              # send value from register al to port 0x64
++  movb    $0xd1,%al               # 0xd1 -> port 0x64
++  outb    %al,$0x64
+ 
+ seta20.2:
+   inb     $0x64,%al               # Wait for not busy
+@@ -43,16 +39,14 @@ seta20.2:
+   # virtual addresses map directly to physical addresses so that the
+   # effective memory map doesn't change during the transition.
+   lgdt    gdtdesc
+-  movl    %cr0, %eax       # cr0 is a control register and holds system flags. copy to eax to modify it
+-  orl     $CR0_PE, %eax          # PE- protection enable. OR the CR0_PE (which is 0x1) with value in eax
+-  movl    %eax, %cr0             # move value in eax back to cr0
++  movl    %cr0, %eax
++  orl     $CR0_PE, %eax
++  movl    %eax, %cr0
+ 
+-//PAGEBREAK!
+   # Complete the transition to 32-bit protected mode by using a long jmp
+   # to reload %cs and %eip.  The segment descriptors are set up with no
+   # translation, so that the mapping is still the identity mapping.
+-  ljmp    $(SEG_KCODE<<3), $start32     # this is just reloading cs with a valid protected mode selector
+-                                        # which is SEG_KCODE<<3. eip is reloaded with the start of the 32 bit mode section which is start32
++  ljmp    $(SEG_KCODE<<3), $start32
+ 
+ .code32  # Tell assembler to generate 32-bit code now.
+ start32:
+@@ -89,3 +83,4 @@ gdt:
+ gdtdesc:
+   .word   (gdtdesc - gdt - 1)             # sizeof(gdt) - 1
+   .long   gdt                             # address gdt
++
+diff --git a/bootmain.c b/bootmain.c
+index 3f47e71..ff1fc52 100644
+--- a/bootmain.c
++++ b/bootmain.c
+@@ -18,13 +18,13 @@ bootmain(void)
+ {
+   struct elfhdr *elf;
+   struct proghdr *ph, *eph;
+-  void (*entry)(void); // here entry is a function pointer
+-  uchar* pa; // pa is physical address
++  void (*entry)(void);
++  uchar* pa;
+ 
+-  elf = (struct elfhdr*)0x10000;  // scratch space (ie. for the storage of temporary user data)
++  elf = (struct elfhdr*)0x10000;  // scratch space
+ 
+   // Read 1st page off disk
+-  readseg((uchar*)elf, 4096, 0); // 4096 bits = 512 bytes. here elf becomes the physical address to which the 1st page is read
++  readseg((uchar*)elf, 4096, 0);
+ 
+   // Is this an ELF executable?
+   if(elf->magic != ELF_MAGIC)
+@@ -37,7 +37,7 @@ bootmain(void)
+     pa = (uchar*)ph->paddr;
+     readseg(pa, ph->filesz, ph->off);
+     if(ph->memsz > ph->filesz)
+-      stosb(pa + ph->filesz, 0, ph->memsz - ph->filesz); // set memsz - filesz addresses to 0
++      stosb(pa + ph->filesz, 0, ph->memsz - ph->filesz);
+   }
+ 
+   // Call the entry point from the ELF header.
+@@ -50,7 +50,7 @@ void
+ waitdisk(void)
+ {
+   // Wait for disk ready.
+-  while((inb(0x1F7) & 0xC0) != 0x40) // 0x1F7 is the status register
++  while((inb(0x1F7) & 0xC0) != 0x40)
+     ;
+ }
+ 
+@@ -69,7 +69,7 @@ readsect(void *dst, uint offset)
+ 
+   // Read data.
+   waitdisk();
+-  insl(0x1F0, dst, SECTSIZE/4); // reads sectsize/4 32 bit (4 bytes, therefore we do sectsize/4) words from port 0x1F0 into dst
++  insl(0x1F0, dst, SECTSIZE/4);
+ }
+ 
+ // Read 'count' bytes at 'offset' from kernel into physical address 'pa'.
+@@ -82,10 +82,10 @@ readseg(uchar* pa, uint count, uint offset)
+   epa = pa + count;
+ 
+   // Round down to sector boundary.
+-  pa -= offset % SECTSIZE; // we are loading more data into memory than required
++  pa -= offset % SECTSIZE;
+ 
+-  // Translate from bytes to sectors; kernel starts at sector 1 (since sector 0 is the bootloader).
+-  offset = (offset / SECTSIZE) + 1; // this gives the sector number
++  // Translate from bytes to sectors; kernel starts at sector 1.
++  offset = (offset / SECTSIZE) + 1;
+ 
+   // If this is too slow, we could read lots of sectors at a time.
+   // We'd write more to memory than asked, but it doesn't matter --
+diff --git a/console.c b/console.c
+new file mode 100644
+index 0000000..5d70f9c
+--- /dev/null
++++ b/console.c
+@@ -0,0 +1,93 @@
++// Console output.
++// Output is written to the screen and serial port.
++
++#include "types.h"
++#include "defs.h"
++#include "param.h"
++#include "x86.h"
++
++static void consputc(int);
++
++static void
++printint(int xx, int base, int sign)
++{
++  static char digits[] = "0123456789abcdef";
++  char buf[16];
++  int i;
++  uint x;
++
++  if(sign && (sign = xx < 0))
++    x = -xx;
++  else
++    x = xx;
++
++  i = 0;
++  do{
++    buf[i++] = digits[x % base];
++  }while((x /= base) != 0);
++
++  if(sign)
++    buf[i++] = '-';
++
++  while(--i >= 0)
++    consputc(buf[i]);
++}
++
++// Print to the console. only understands %d, %x, %p, %s.
++void
++cprintf(char *fmt, ...)
++{
++  int i, c;
++  uint *argp;
++  char *s;
++
++  if (fmt == 0)
++    // panic("null fmt");
++    return;
++
++  argp = (uint*)(void*)(&fmt + 1);
++  for(i = 0; (c = fmt[i] & 0xff) != 0; i++){
++    if(c != '%'){
++      consputc(c);
++      continue;
++    }
++    c = fmt[++i] & 0xff;
++    if(c == 0)
++      break;
++    switch(c){
++    case 'd':
++      printint(*argp++, 10, 1);
++      break;
++    case 'x':
++    case 'p':
++      printint(*argp++, 16, 0);
++      break;
++    case 's':
++      if((s = (char*)*argp++) == 0)
++        s = "(null)";
++      for(; *s; s++)
++        consputc(*s);
++      break;
++    case '%':
++      consputc('%');
++      break;
++    default:
++      // Print unknown % sequence to draw attention.
++      consputc('%');
++      consputc(c);
++      break;
++    }
++  }
++
++}
++
++#define BACKSPACE 0x100
++
++void
++consputc(int c)
++{
++  if(c == BACKSPACE){
++    uartputc('\b'); uartputc(' '); uartputc('\b');
++  } else
++    uartputc(c);
++}
+\ No newline at end of file
+diff --git a/defs.h b/defs.h
+new file mode 100644
+index 0000000..2a82295
+--- /dev/null
++++ b/defs.h
+@@ -0,0 +1,15 @@
++// console.c
++void            cprintf(char*, ...);
++
++// string.c
++int             memcmp(const void*, const void*, uint);
++void*           memmove(void*, const void*, uint);
++void*           memset(void*, int, uint);
++char*           safestrcpy(char*, const char*, int);
++int             strlen(const char*);
++int             strncmp(const char*, const char*, uint);
++char*           strncpy(char*, const char*, int);
++
++// uart.c
++void            uartinit(void);
++void            uartputc(int);
+\ No newline at end of file
+diff --git a/entry.S b/entry.S
+index ee72e1c..9422e26 100644
+--- a/entry.S
++++ b/entry.S
+@@ -19,6 +19,7 @@
+ # }
+ 
+ #include "asm.h"
++#include "mmu.h"
+ #include "param.h"
+ 
+ # Multiboot header.  Data to direct multiboot loader.
+diff --git a/lab0_2023CS51215.tar.gz b/lab0_2023CS51215.tar.gz
+deleted file mode 100644
+index 2e121ae..0000000
+Binary files a/lab0_2023CS51215.tar.gz and /dev/null differ
+diff --git a/main.c b/main.c
+index 808545d..b9d0911 100644
+--- a/main.c
++++ b/main.c
+@@ -1,4 +1,5 @@
+ #include "types.h"
++#include "defs.h"
+ #include "x86.h"
+ 
+ extern char end[]; // first address after kernel loaded from ELF file
+@@ -6,6 +7,7 @@ extern char end[]; // first address after kernel loaded from ELF file
+ int
+ halt(void)
+ {
++  cprintf("Bye COL%d!\n\0", 331);
+   outw(0x604, 0x2000);
+   // For older versions of QEMU, 
+   outw(0xB004, 0x2000);
+@@ -16,5 +18,6 @@ halt(void)
+ int
+ main(void)
+ {
++  uartinit();      // serial port
+   halt();
+-}
+\ No newline at end of file
++}
+diff --git a/mmu.h b/mmu.h
+index d5113b3..bcf3fe0 100644
+--- a/mmu.h
++++ b/mmu.h
+@@ -6,4 +6,7 @@
+ 
+ // various segment selectors.
+ #define SEG_KCODE 1  // kernel code
+-#define SEG_KDATA 2  // kernel data+stack
+\ No newline at end of file
++#define SEG_KDATA 2  // kernel data+stack
++#define SEG_UCODE 3  // user code
++#define SEG_UDATA 4  // user data+stack
++#define SEG_TSS   5  // this process's task state
+\ No newline at end of file
+diff --git a/p1-booting.md b/p1-booting.md
+index 818cbdb..c1f90ca 100644
+--- a/p1-booting.md
++++ b/p1-booting.md
+@@ -39,7 +39,7 @@ All the other segment registers are zero.
+ 
+ `bootmain.c` has to now load the OS from the disk and give control to it. It
+ first reads the next 4KB from the disk into memory location `0x10000`. The OS is
+-stored in an *Executable and Linkable (ELF) format*. The format specifies a standard
++stored in an *Executable Linux File (ELF) format*. The format specifies a standard
+ on how an executable is stored so that we can safely give control to it. This
+ format enables us to move executables from one machine to another (assuming same
+ ISA etc). Our OS is just another executable.
+diff --git a/p2-print.md b/p2-print.md
+new file mode 100644
+index 0000000..c86c590
+--- /dev/null
++++ b/p2-print.md
+@@ -0,0 +1,16 @@
++Self study the diff:
++
++`git diff p1-booting`
++
++
++# UART Documentation
++
++UART stands for Universal Asynchronous Reciever/Transmitter. It is an interface for asynchronous(without a synchronizing clock signal) serial communication in PCs.
++
++The uart.c file essentially describe the functions to communicate with the UART interface which in this case is the PC8250A UART(The exact part might be different as different models have been introduced over time, however the basic functionality and register mapping is consistent). 
++
++The PC8250 has 8 programmable registers which are accessed by the processor using port mapped IO. In the case of X86, the location 0x3f8 points to the base register of the UART (Equivalent to the 0 register in the UART datasheet). The pin descriptions given in the datasheet should be read along with the code to understand there function. These registers are written using the outb instructions. The in and out instructions are needed for port mapped IO unlike APICs.
++
++QEMU also simulates the UART. So if we include the code to control the registers of the UART we will see the appropriate output on screen. For example the uartputc function waits until the Transmission Holding Register Empty bit is set which indicates that the UART is ready to transmit another character before writing a character to the data register.
++
++[UART Datasheet](https://sys.cs.fau.de/extern/lehre/ws22/bs/uebung/aufgabe3/uart-8250a.pdf)
+diff --git a/string.c b/string.c
+new file mode 100644
+index 0000000..a7cc61f
+--- /dev/null
++++ b/string.c
+@@ -0,0 +1,105 @@
++#include "types.h"
++#include "x86.h"
++
++void*
++memset(void *dst, int c, uint n)
++{
++  if ((int)dst%4 == 0 && n%4 == 0){
++    c &= 0xFF;
++    stosl(dst, (c<<24)|(c<<16)|(c<<8)|c, n/4);
++  } else
++    stosb(dst, c, n);
++  return dst;
++}
++
++int
++memcmp(const void *v1, const void *v2, uint n)
++{
++  const uchar *s1, *s2;
++
++  s1 = v1;
++  s2 = v2;
++  while(n-- > 0){
++    if(*s1 != *s2)
++      return *s1 - *s2;
++    s1++, s2++;
++  }
++
++  return 0;
++}
++
++void*
++memmove(void *dst, const void *src, uint n)
++{
++  const char *s;
++  char *d;
++
++  s = src;
++  d = dst;
++  if(s < d && s + n > d){
++    s += n;
++    d += n;
++    while(n-- > 0)
++      *--d = *--s;
++  } else
++    while(n-- > 0)
++      *d++ = *s++;
++
++  return dst;
++}
++
++// memcpy exists to placate GCC.  Use memmove.
++void*
++memcpy(void *dst, const void *src, uint n)
++{
++  return memmove(dst, src, n);
++}
++
++int
++strncmp(const char *p, const char *q, uint n)
++{
++  while(n > 0 && *p && *p == *q)
++    n--, p++, q++;
++  if(n == 0)
++    return 0;
++  return (uchar)*p - (uchar)*q;
++}
++
++char*
++strncpy(char *s, const char *t, int n)
++{
++  char *os;
++
++  os = s;
++  while(n-- > 0 && (*s++ = *t++) != 0)
++    ;
++  while(n-- > 0)
++    *s++ = 0;
++  return os;
++}
++
++// Like strncpy but guaranteed to NUL-terminate.
++char*
++safestrcpy(char *s, const char *t, int n)
++{
++  char *os;
++
++  os = s;
++  if(n <= 0)
++    return os;
++  while(--n > 0 && (*s++ = *t++) != 0)
++    ;
++  *s = 0;
++  return os;
++}
++
++int
++strlen(const char *s)
++{
++  int n;
++
++  for(n = 0; s[n]; n++)
++    ;
++  return n;
++}
++
+diff --git a/uart.c b/uart.c
+new file mode 100644
+index 0000000..9ec6cbf
+--- /dev/null
++++ b/uart.c
+@@ -0,0 +1,47 @@
++// Intel 8250 serial port (UART).
++
++#include "types.h"
++#include "defs.h"
++#include "param.h"
++#include "x86.h"
++
++#define COM1    0x3f8
++
++static int uart;    // is there a uart?
++
++void
++uartinit(void)
++{
++  char *p;
++
++  // Turn off the FIFO
++  outb(COM1+2, 0);
++
++  // 9600 baud, 8 data bits, 1 stop bit, parity off.
++  outb(COM1+3, 0x80);    // Unlock divisor
++  outb(COM1+0, 115200/9600);
++  outb(COM1+1, 0);
++  outb(COM1+3, 0x03);    // Lock divisor, 8 data bits.
++  outb(COM1+4, 0);
++  outb(COM1+1, 0x01);    // Enable receive interrupts.
++
++  // If status is 0xFF, no serial port.
++  if(inb(COM1+5) == 0xFF)
++    return;
++  uart = 1;
++
++  // Announce that we're here.
++  for(p="xv6...\n"; *p; p++)
++    uartputc(*p);
++}
++
++void
++uartputc(int c)
++{
++  int i;
++
++  if(!uart)
++    return;
++  for(i = 0; i < 128 && !(inb(COM1+5) & 0x20); i++);
++  outb(COM1+0, c);
++}
+\ No newline at end of file

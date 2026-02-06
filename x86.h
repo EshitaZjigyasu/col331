@@ -1,5 +1,5 @@
 // Routines to let C code use special x86 instructions.
-
+// asm enables embedding assembly code into source code and volatile tells the compiler to not reorder the instruction
 static inline uchar
 inb(ushort port)
 {
@@ -39,6 +39,7 @@ outsl(int port, const void *addr, int cnt)
                "cc");
 }
 
+// stos means store string
 static inline void
 stosb(void *addr, int data, int cnt)
 {
