@@ -38,8 +38,8 @@
 #define TICR    (0x0380/4)   // Timer Initial Count
 #define TCCR    (0x0390/4)   // Timer Current Count
 #define TDCR    (0x03E0/4)   // Timer Divide Configuration
-
-volatile uint *lapic;  // Initialized in mp.c
+// the following the definition (allocating memory) of lapic
+volatile uint *lapic;  // Initialized (given an initial value) in mp.c. since not static, it is a global variable visible to linker. has been declared as extern in defs.h
 
 //PAGEBREAK!
 static void
@@ -52,10 +52,10 @@ lapicw(int index, int value)
 void
 lapicinit(void)
 {
-  if(!lapic)
+  if(!lapic) // to ensure lapic pointer has been initialized
     return;
 
-  // Enable local APIC; set spurious interrupt vector.
+  // Enable local APIC; set spurious interrupt vector (interrupts that the CPU receives even though there is no device actually requesting service. this happens due to race conditions or electrical noise. You cannot assume every interrupt corresponds to real device work. So the interrupt handler must: 1. verify the source, 2. and return cleanly if nothing is pending.).
   lapicw(SVR, ENABLE | (T_IRQ0 + IRQ_SPURIOUS));
 
   // The timer repeatedly counts down at bus frequency

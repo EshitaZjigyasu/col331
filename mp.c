@@ -1,6 +1,7 @@
 // Multiprocessor support
 // Search memory for MP description structures.
 // http://developer.intel.com/design/pentium/datashts/24201606.pdf
+// SMP: symmetric multiprocessing
 
 #include "types.h"
 #include "defs.h"
@@ -11,7 +12,7 @@
 #include "mmu.h"
 #include "proc.h"
 
-struct cpu cpus[NCPU];
+struct cpu cpus[NCPU]; // no. of simultaneously running processes in x86 is fixed 
 int ncpu;
 uchar ioapicid;
 
@@ -26,7 +27,7 @@ sum(uchar *addr, int len)
   return sum;
 }
 
-// Look for an MP structure in the len bytes at addr.
+// Look for an MP structure in the len bytes at addr. this structure serves as starting point for OS to discover details about multiprocessor hardware. given the location, look for the mpstructure uptil len bytes
 static struct mp*
 mpsearch1(uint a, int len)
 {
@@ -35,18 +36,18 @@ mpsearch1(uint a, int len)
   // addr = P2V(a);
   addr = (uchar*) a;
   e = addr+len;
-  for(p = addr; p < e; p += sizeof(struct mp))
-    if(memcmp(p, "_MP_", 4) == 0 && sum(p, sizeof(struct mp)) == 0)
+  for(p = addr; p < e; p += sizeof(struct mp)) // iterate through memory region, with step size as size of struct
+    if(memcmp(p, "_MP_", 4) == 0 && sum(p, sizeof(struct mp)) == 0) // first 4 bytes should match that string, all bytes should sum to 0
       return (struct mp*)p;
   return 0;
 }
 
 // Search for the MP Floating Pointer Structure, which according to the
 // spec is in one of the following three locations:
-// 1) in the first KB of the EBDA;
+// 1) in the first KB of the EBDA (extended BIOS data area);
 // 2) in the last KB of system base memory;
 // 3) in the BIOS ROM between 0xE0000 and 0xFFFFF.
-static struct mp*
+static struct mp* // knows where to look for the mp structure
 mpsearch(void)
 {
   uchar *bda;
@@ -81,7 +82,7 @@ mpconfig(struct mp **pmp)
     return 0;
   // conf = (struct mpconf*) P2V((uint) mp->physaddr);
   conf = (struct mpconf*) (uint) mp->physaddr;
-  if(memcmp(conf, "PCMP", 4) != 0)
+  if(memcmp(conf, "PCMP", 4) != 0) // mp configuration table is the PCMP structure
     return 0;
   if(conf->version != 1 && conf->version != 4)
     return 0;

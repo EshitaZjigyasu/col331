@@ -4,7 +4,7 @@
 #include "mmu.h"
 #include "x86.h"
 #include "proc.h"
-
+// at this stage, this file is for CPU identification
 // Must be called with interrupts disabled
 int
 cpuid() {

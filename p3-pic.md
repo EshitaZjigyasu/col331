@@ -23,12 +23,12 @@ To support multi-core processors, there is now a local APIC for each core, that
 can be independently interrupted, such as timer interrupts, and a common IO APIC
 which is interrupted by devices such as keyboard, mouse, and disk controller.
 See Figure 10.3 Intel SDM Volume 3, Part 1. Local APICs (LAPICs) also forward
-and receive inter-processor interrupts (IPI).
+and receive inter-processor interrupts (IPI). // this means that one processor can interrupt another processor if the interrupting processor requires the interrupted processor to do some action
 
 Table 10.1 Intel SDM Volume 3, Part 1 describes all the registers in LAPIC.
-`main.c` calls `lapicinit` which enables LAPIC, sets periodic timer interrupts, 
+`main.c` calls `lapicinit` which enables LAPIC, sets periodic timer interrupts (OS programs the LAPIC timer to generate interrupts periodically),
 acknowledges any outstanding interrupts by resetting end of interrupt (EOI), and
-enables all external interrupts by setting task priority register (TPR) to 0.
+enables all external interrupts by setting task priority register (TPR) to 0. (so none of the interrupts are blocked)
 For example, TPR=8 would have blocked interrupts with priority class < 9.
 Section 10.8.3 Intel SDM Volume 3, Part 1 discusses interrupt priorities. Note
 that this does not enable interrupts at CPU. You can [read
