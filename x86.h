@@ -81,7 +81,7 @@ sti(void)
 struct gatedesc;
 
 static inline void
-lidt(struct gatedesc *p, int size)
+lidt(struct gatedesc *p, int size) // Load IDT. tells CPU where in mem IDT is located and how big it is. 
 {
   volatile ushort pd[3];
 

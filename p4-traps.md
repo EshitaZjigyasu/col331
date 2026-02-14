@@ -5,9 +5,9 @@ In this part, we handle the periodic timer interrupts that we had set in
 `lapic.c`.  The interrupt handler in `trap.c` prints a message everytime the
 timer ticks.
 
-In `main.c`, we call `sti` to enable interrupt handling on CPU. However before
+In `main.c`, we call `sti` (set interrupt flag (sets the interrupt flag in EFLAGS register)) to enable interrupt handling on CPU. However before
 enabling interrupts, the OS must set up the interrupt handlers. Note that the 
-interrupts were disabled by running `cli` as the first instruction in the
+interrupts were disabled by running `cli` (clear interrupt flag) as the first instruction in the
 bootloader `bootasm.S`.
 
 Interrupt handlers are set up in the *Interrupt Descriptor Table (IDT)*

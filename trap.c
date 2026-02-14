@@ -6,7 +6,7 @@
 #include "x86.h"
 #include "traps.h"
 
-// Interrupt descriptor table (shared by all CPUs).
+// Interrupt descriptor table (shared by all CPUs and present in memory).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 uint ticks;
