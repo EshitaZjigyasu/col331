@@ -50,22 +50,28 @@ bzero(int dev, int bno)
 // Blocks.
 
 // Allocate a zeroed disk block.
+/*
+This is balloc (Block ALLOCator), a function responsible for finding a free disk block, marking it as used in the allocation bitmap, and returning its block number.
+*/
 static uint
 balloc(uint dev)
 {
   int b, bi, m;
   struct buf *bp;
-
+// b: Loop variable for iterating through blocks of the bitmap.
+// bi: Loop variable for iterating through bits inside a single bitmap block.
+// m: A bitmask (e.g., 00100000).
+// bp: Pointer to a buffer (holds the bitmap block we read from disk).
   bp = 0;
   for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb));
+    bp = bread(dev, BBLOCK(b, sb)); // 1. Get the single bitmap block responsible for blocks b through b+BPB-1 
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
-      m = 1 << (bi % 8);
+      m = 1 << (bi % 8); // Calculates the bit position within a single byte (0-7) and creates a mask with a 1 at that position.
       if((bp->data[bi/8] & m) == 0){  // Is block free?
         bp->data[bi/8] |= m;  // Mark block in use.
-        bwrite(bp);
-        brelse(bp);
-        bzero(dev, b + bi);
+        bwrite(bp); // Writes the modified bitmap block back to disk immediately so the change is saved.
+        brelse(bp); // release the bitmap block from the buffer
+        bzero(dev, b + bi); // zero out the bit 
         return b + bi;
       }
     }
@@ -118,9 +124,9 @@ ialloc(uint dev, short type)
     bp = bread(dev, IBLOCK(inum, sb));
     dip = (struct dinode*)bp->data + inum%IPB;
     if(dip->type == 0){  // a free inode
-      memset(dip, 0, sizeof(*dip));
+      memset(dip, 0, sizeof(*dip)); // clear old data
       dip->type = type;
-      bwrite(bp);   // mark it allocated on the disk
+      bwrite(bp);   // mark it allocated on the disk and write to disk
       brelse(bp);
       return iget(dev, inum);
     }
@@ -151,8 +157,8 @@ iupdate(struct inode *ip)
   dip->minor = ip->minor;
   dip->nlink = ip->nlink;
   dip->size = ip->size;
-  memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
-  bwrite(bp);
+  memmove(dip->addrs, ip->addrs, sizeof(ip->addrs)); // copies from one location in ram to another location
+  bwrite(bp); // writes to the disk
   brelse(bp);
 }
 
@@ -238,10 +244,16 @@ bmap(struct inode *ip, uint bn)
 
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0)
+    if((addr = ip->addrs[NDIRECT]) == 0) // if indirect block was empty, allocate it
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
+    a = (uint*)bp->data; // We cast its data (bp->data) to an array of integers (uint *a), so we can treat it as a list of block numbers.
+    /*
+    We check the entry at index bn inside the indirect block. a[bn] is the physical block number of the actual file data.
+If it is 0 (hole in the file), we allocate a new data block (balloc).
+We save this new block number into the indirect block array (a[bn] = ...).
+Crucially: We call bwrite(bp) to save the updated indirect block (the list of pointers) back to disk immediately.
+    */
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->dev);
       bwrite(bp);
@@ -299,9 +311,9 @@ writei(struct inode *ip, char *src, uint off, uint n)
     return -1;
   if(off + n > MAXFILE*BSIZE)
     return -1;
-
+// tot: Total bytes written so far. off: Current file offset (starts at argument off, increments as we write). src: Pointer to the source data buffer (user's buffer).
   for(tot=0; tot<n; tot+=m, off+=m, src+=m){
-    bp = bread(ip->dev, bmap(ip, off/BSIZE));
+    bp = bread(ip->dev, bmap(ip, off/BSIZE)); // bread(...): Reads that block into memory buffer bp. We read first because we might be modifying only part of a block (e.g., changing bytes 10-20), so we need the existing data (bytes 0-9 and 21-511) to remain intact.
     m = min(n - tot, BSIZE - off%BSIZE);
     memmove(bp->data + off%BSIZE, src, m);
     bwrite(bp);
@@ -309,8 +321,8 @@ writei(struct inode *ip, char *src, uint off, uint n)
   }
 
   if(n > 0 && off > ip->size){
-    ip->size = off;
-    iupdate(ip);
+    ip->size = off; 
+    iupdate(ip);// write updated size to disk
   }
   return n;
 }
