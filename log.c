@@ -116,7 +116,7 @@ recover_from_log(void)
   write_head(); // clear the log
 }
 
-// called at the start of each FS system call.
+// called at the start of each FS system call. in real xv6 with multiple transaction possible, it is used to check if there is enough space in the log for the worst case number of data blocks that might be present in the transaction
 void
 begin_op(void)
 {
@@ -171,7 +171,7 @@ commit()
 //   log_write(bp)
 //   brelse(bp)
 void
-log_write(struct buf *b)
+log_write(struct buf *b) // updates in memory log header and marks the buffer as dirty
 {
   int i;
 

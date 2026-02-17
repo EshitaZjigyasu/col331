@@ -55,7 +55,7 @@ point, the changes made by the operation will be applied. We will see this later
 in `initlog`. 
 
 `commit` then calls `install_trans` to write the modified blocks in their correct
-places. Finally, it resets the log header block.
+places. Finally, it resets the log header block (because in xv6 we have just one transaction at a time).
 
 After reboot, `main.c` calls `initlog` which calls `recover_from_log`. This 
 calls `read_head` to read the header block to see if there are any pending
@@ -63,7 +63,7 @@ blocks in the log that are to be written. Header block only contains committed
 operations that we were not finished writing. `install_trans` writes the blocks
 from the log to their appropriate places and finally clears the header block. 
 
-This scheme works because writing blocks is **idempotent**. It is possible that
+This scheme works because writing blocks is **idempotent** (Doing the same operation multiple times produces the same final result as doing it once.). It is possible that
 the computer lost power just before clearing the log header block, i.e, the
 blocks were already written before crash. Rewriting them after reboot does not 
 matter since it writes the same content on the same block.
