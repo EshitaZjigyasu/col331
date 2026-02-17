@@ -10,7 +10,7 @@
 #include "stat.h"
 #include "fcntl.h"
 
-struct {
+struct { // stores open files
   struct file file[NFILE];
 } ftable;
 
@@ -83,7 +83,7 @@ fileread(struct file *f, char *addr, int n)
     iread(f->ip);
     if((r = readi(f->ip, addr, f->off, n)) > 0)
       f->off += r;
-    return r;
+    return r; // how many data blocks did we read from the file
   }
   panic("fileread");
 }
@@ -98,7 +98,7 @@ filewrite(struct file *f, char *addr, int n)
     return -1;
   if(f->type == FD_INODE){
     // write a few blocks at a time
-    int max = ((MAXOPBLOCKS-1-1-2) / 2) * 512;
+    int max = ((MAXOPBLOCKS-1-1-2) / 2) * 512; // maxopblocks -> max no. of data blocks that can be written to / present in the transaction 
     int i = 0;
     while(i < n){
       int n1 = n - i;
@@ -139,7 +139,7 @@ isdirempty(struct inode *dp)
 int
 unlink(char* path, char* name)
 {
-  struct inode *ip, *dp;
+  struct inode *ip, *dp; // dp -> parent direcotry. ip -> target inode
   struct dirent de;
   uint off;
 
@@ -168,7 +168,7 @@ unlink(char* path, char* name)
   if(writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
     panic("unlink: writei");
   if(ip->type == T_DIR){
-    dp->nlink--;
+    dp->nlink--; // f ip was a directory, it contained a .. entry pointing back to dp.
     iupdate(dp);
   }
   iput(dp);

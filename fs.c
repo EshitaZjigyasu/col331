@@ -353,7 +353,7 @@ readi(struct inode *ip, char *dst, uint off, uint n)
     memmove(dst, bp->data + off%BSIZE, m);
     brelse(bp);
   }
-  return n;
+  return n; // how many data blocks did we read from inode (either directory entries or the contents of the file itself)
 }
 
 // Write data to inode.
