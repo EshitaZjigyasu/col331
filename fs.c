@@ -22,16 +22,17 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 // there should be one superblock per disk device, but we run with
 // only one device
-struct superblock sb; 
+struct superblock sb; // this is stored in memory here, not disk. It acts as an in-memory cache of the Superblock data that resides on the disk. 
 
 // Read the super block.
+// reads the raw bytes from Disk Sector 1 (via bread) and copies them into this (sb) memory location (memmove(sb, bp->data, ...))
 void
 readsb(int dev, struct superblock *sb)
 {
   struct buf *bp;
 
-  bp = bread(dev, 1);
-  memmove(sb, bp->data, sizeof(*sb));
+  bp = bread(dev, 1); // read block number 1 from device dev
+  memmove(sb, bp->data, sizeof(*sb)); // Copy bytes from bp->data into the memory pointed to by sb.
   brelse(bp);
 }
 
@@ -65,41 +66,42 @@ iinit(int dev)
           sb.bmapstart);
 }
 
-// Find the inode with number inum on device dev
+// Find the inode with number inum on device dev ()
 // and return the in-memory copy. Does not lock
-// the inode and does not read it from disk.
+// the inode and 
+// ***does not read it from disk.***
 struct inode*
-iget(uint dev, uint inum)
+iget(uint dev, uint inum) // "I found a place to put this inode,"
 {
   struct inode *ip, *empty;
 
   // Is the inode already cached?
-  empty = 0;
+  empty = 0; 
   for(ip = &icache.inode[0]; ip < &icache.inode[NINODE]; ip++){
     if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
       ip->ref++;
       return ip;
     }
     if(empty == 0 && ip->ref == 0)    // Remember empty slot.
-      empty = ip;
+      empty = ip; // stores the address of the first unused struct in the memory array
   }
 
   // Recycle an inode cache entry.
   if(empty == 0)
     panic("iget: no inodes");
-
+  // if inode not already cached
   ip = empty;
   ip->dev = dev;
   ip->inum = inum;
   ip->ref = 1;
-  ip->valid = 0;
+  ip->valid = 0; // this is 0 because iget only reserves the memory slot for the inode in the cache; it does not read the data from disk yet.
 
   return ip;
 }
 
 // Reads the inode from disk if necessary.
 void
-iread(struct inode *ip)
+iread(struct inode *ip) // "I have filled this place with real data."
 {
   struct buf *bp;
   struct dinode *dip;
@@ -107,7 +109,11 @@ iread(struct inode *ip)
   if(ip == 0 || ip->ref < 1)
     panic("iread");
 
-  if(ip->valid == 0){
+  if(ip->valid == 0){ // read from disk if not valid
+    /*
+    IBLOCK(ip->inum, sb): Calculates which physical disk block contains this inode number (inum).
+    bread(ip->dev, ...): Reads that entire 512-byte block into a buffer bp.
+    */
     bp = bread(ip->dev, IBLOCK(ip->inum, sb));
     dip = (struct dinode*)bp->data + ip->inum%IPB;
     ip->type = dip->type;
