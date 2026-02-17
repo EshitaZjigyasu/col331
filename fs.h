@@ -22,8 +22,8 @@ struct superblock {
 };
 
 #define NDIRECT 12
-#define NINDIRECT (BSIZE / sizeof(uint))
-#define MAXFILE (NDIRECT + NINDIRECT)
+#define NINDIRECT (BSIZE / sizeof(uint)) // this is the number of pointers inside that one indirect block
+#define MAXFILE (NDIRECT + NINDIRECT) // max number of files that can be present in a directory
 
 // On-disk inode structure
 struct dinode {
@@ -32,7 +32,7 @@ struct dinode {
   short minor;          // Minor device number (T_DEV only)
   short nlink;          // Number of links to inode in file system
   uint size;            // Size of file (bytes)
-  uint addrs[NDIRECT+1];   // Data block addresses
+  uint addrs[NDIRECT+1];   // Data block addresses (+1 is for the 1 indirect block)
 };
 
 // Inodes per block.
@@ -50,7 +50,7 @@ struct dinode {
 // Directory is a file containing a sequence of dirent structures.
 #define DIRSIZ 14
 
-struct dirent {
+struct dirent { // a dirent is a directory entry ie. a file. every file has an inode and a name. 
   ushort inum;
   char name[DIRSIZ];
 };

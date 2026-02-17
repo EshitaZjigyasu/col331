@@ -26,7 +26,7 @@ int nlog = LOGSIZE;
 int nmeta;    // Number of meta blocks (boot, sb, nlog, inode, bitmap)
 int nblocks;  // Number of data blocks
 
-int fsfd;
+int fsfd; // file descriptor
 struct superblock sb;
 char zeroes[BSIZE];
 uint freeinode = 1;
@@ -41,9 +41,9 @@ void rsect(uint sec, void *buf);
 uint ialloc(ushort type);
 void iappend(uint inum, void *p, int n);
 
-// convert to intel byte order
+// convert to intel byte order (little endian)
 ushort
-xshort(ushort x)
+xshort(ushort x) // stores 16bit in little endian
 {
   ushort y;
   uchar *a = (uchar*)&y;
@@ -53,7 +53,7 @@ xshort(ushort x)
 }
 
 uint
-xint(uint x)
+xint(uint x) // stores 32 bit in little endian
 {
   uint y;
   uchar *a = (uchar*)&y;
@@ -65,11 +65,11 @@ xint(uint x)
 }
 
 int
-main(int argc, char *argv[])
+main(int argc, char *argv[]) // creates disk image fs.img
 {
   int i, cc, fd;
   uint rootino, inum, off;
-  struct dirent de;
+  struct dirent de; // directory entry ie. a file or '.' or '..'
   char buf[BSIZE];
   struct dinode din;
 
@@ -107,20 +107,20 @@ main(int argc, char *argv[])
 
   freeblock = nmeta;     // the first free block that we can allocate
 
-  for(i = 0; i < FSSIZE; i++)
+  for(i = 0; i < FSSIZE; i++) // initialize all blocks to 0
     wsect(i, zeroes);
 
-  memset(buf, 0, sizeof(buf));
-  memmove(buf, &sb, sizeof(sb));
-  wsect(1, buf);
+  memset(buf, 0, sizeof(buf)); // clears buffer by writing zeroes
+  memmove(buf, &sb, sizeof(sb)); // populate the buffer with the sb struct 
+  wsect(1, buf); // now write this buffer (which contains the superblock) to block number 1 of the disk (since block 0 has bootloader) 
 
-  rootino = ialloc(T_DIR);
-  assert(rootino == ROOTINO);
+  rootino = ialloc(T_DIR); // allocates a new directoy inode which will be the first inode to be created on disk
+  assert(rootino == ROOTINO); // root inode number should be 1
 
-  bzero(&de, sizeof(de));
-  de.inum = xshort(rootino);
-  strcpy(de.name, ".");
-  iappend(rootino, &de, sizeof(de));
+  bzero(&de, sizeof(de)); // 1. Clear a directory entry struct
+  de.inum = xshort(rootino);  // 2. Set the inode number (here, it's 1 since '.' is also the root directory only)
+  strcpy(de.name, "."); // 3. Set the name to be "."
+  iappend(rootino, &de, sizeof(de)); // 4. Append this entry to the root directory
 
   bzero(&de, sizeof(de));
   de.inum = xshort(rootino);
@@ -168,30 +168,44 @@ main(int argc, char *argv[])
 }
 
 void
-wsect(uint sec, void *buf)
+wsect(uint sec, void *buf) // write sector (used to write a single block of data to the file system image file it is creating)
 {
-  if(lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE){
+  if(lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE){ // move file pointer to sec * BSIZE
     perror("lseek");
     exit(1);
   }
-  if(write(fsfd, buf, BSIZE) != BSIZE){
+  if(write(fsfd, buf, BSIZE) != BSIZE){ // write BSIZE bytes from buf to the current position of file pointer
     perror("write");
     exit(1);
   }
 }
 
+/*
+Disk drives read and write in blocks (sectors), usually 512 bytes. However, an inode is much smaller than a block (typically 64 bytes in xv6).
+
+This means one disk block contains multiple inodes (specifically IPB or "Inodes Per Block").
+
+You cannot just "write an inode" to the disk. You must:
+1. Read the whole block containing the inode you want to change (so you don't overwrite its neighbors).
+2. Find the exact location (dip) of your specific inode inside that block of data.
+3. Update just that struct in memory.
+4. Write the whole block back to the disk.
+*/
 void
-winode(uint inum, struct dinode *ip)
+winode(uint inum, struct dinode *ip) // write inode
 {
   char buf[BSIZE];
   uint bn;
-  struct dinode *dip;
+  struct dinode *dip; // disk inode pointer
 
-  bn = IBLOCK(inum, sb);
-  rsect(bn, buf);
-  dip = ((struct dinode*)buf) + (inum % IPB);
-  *dip = *ip;
-  wsect(bn, buf);
+  bn = IBLOCK(inum, sb); // get the block number of the inode inum using the superblock sb
+  rsect(bn, buf); // read the block into the buffer
+  // CRITICAL STEP:
+  // 1. Cast 'buf' (raw bytes) to a 'struct dinode*' array.
+  // 2. Add an offset to point to the specific inode within that block.
+  dip = ((struct dinode*)buf) + (inum % IPB); 
+  *dip = *ip; // Copy the new inode data (*ip) into that specific spot in the buffer (*dip)
+  wsect(bn, buf); // Write the modified block back to disk
 }
 
 void
@@ -221,16 +235,16 @@ rsect(uint sec, void *buf)
 }
 
 uint
-ialloc(ushort type)
+ialloc(ushort type) // inode allocate
 {
-  uint inum = freeinode++;
-  struct dinode din;
+  uint inum = freeinode++; // assign the next free inode
+  struct dinode din; // on disk inode structure
 
-  bzero(&din, sizeof(din));
+  bzero(&din, sizeof(din)); // clears memory to ensure no garbage data is written
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
-  winode(inum, &din);
+  winode(inum, &din); //
   return inum;
 }
 
@@ -253,7 +267,7 @@ balloc(int used)
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 void
-iappend(uint inum, void *xp, int n)
+iappend(uint inum, void *xp, int n) // inode append
 {
   char *p = (char*)xp;
   uint fbn, off, n1;
@@ -262,36 +276,68 @@ iappend(uint inum, void *xp, int n)
   uint indirect[NINDIRECT];
   uint x;
 
-  rinode(inum, &din);
-  off = xint(din.size);
+  rinode(inum, &din); // 1. Read the inode to get current size and block addresses
+  off = xint(din.size); // 2. Get current file size (offset where we start writing since we are appending to the directory's inode to add a file)
   // printf("append inum %d at off %d sz %d\n", inum, off, n);
   while(n > 0){
-    fbn = off / BSIZE;
+    fbn = off / BSIZE; // 3. Calculate "File Block Number" (0th block, 1st block, etc. ie. block number inside the file)
     assert(fbn < MAXFILE);
-    if(fbn < NDIRECT){
-      if(xint(din.addrs[fbn]) == 0){
-        din.addrs[fbn] = xint(freeblock++);
+    if(fbn < NDIRECT){ 
+      if(xint(din.addrs[fbn]) == 0){ // file block address of 0 means that no disk block has been assigned to that block of the file
+        din.addrs[fbn] = xint(freeblock++); // freebock is maintained in mkfs.c which tracks the next free block on the disk image
       }
       x = xint(din.addrs[fbn]);
-    } else {
+    } else { // indirect block
       if(xint(din.addrs[NDIRECT]) == 0){
-        din.addrs[NDIRECT] = xint(freeblock++);
+        din.addrs[NDIRECT] = xint(freeblock++); // Allocate indirect block itself
       }
-      rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+      rsect(xint(din.addrs[NDIRECT]), (char*)indirect); // read the entire indirect block
       if(indirect[fbn - NDIRECT] == 0){
-        indirect[fbn - NDIRECT] = xint(freeblock++);
-        wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+        indirect[fbn - NDIRECT] = xint(freeblock++); // Allocate data block inside indirect block
+        wsect(xint(din.addrs[NDIRECT]), (char*)indirect); // Save indirect block back
       }
-      x = xint(indirect[fbn-NDIRECT]);
+      x = xint(indirect[fbn-NDIRECT]); // Get the actual data block number
     }
+    // now we are actually writing the data into the disk blocks
+    /*
+    Goal: Calculate how many bytes (n1) we can write into the current block before it gets full.
+    n: The total number of bytes remaining to be written.
+    fbn: The current "File Block Number" (0, 1, 2...).
+    off: The absolute byte offset in the file where we are currently writing (e.g., byte 520).
+    (fbn + 1) * BSIZE: This calculates the byte offset of the end of the current block.
+    If fbn is 1 and BSIZE is 512, the end is at (1+1)*512 = 1024.
+    ... - off: This subtracts our current position from the end of the block.
+    If off is 520, then the remaining space in this block is 1024 - 520 = 504 bytes.
+    min(...): We take the smaller of "bytes remaining to write" (n) and "space remaining in this block". If we have 1000 bytes to write (n=1000) but only 504 bytes left in the block, n1 becomes 504. We will loop around for the rest.
+    */
     n1 = min(n, (fbn + 1) * BSIZE - off);
+    /*
+    Goal: Read the existing content of the target disk block (x) into memory (buf).
+    Why? We might be appending to a partially filled block.
+    Example: A file has 50 bytes. We want to append 10 more. The block x already contains 50 bytes of valid data followed by zeroes.
+    If we just wrote our new 10 bytes to disk without reading first, we would overwrite the whole 512-byte sector with just our 10 bytes (and garbage/zeros elsewhere), destroying the first 50 bytes!
+    By reading first, we preserve the existing data.
+    */
     rsect(x, buf);
+    /*
+    Goal: Copy our new data into the correct spot within the memory buffer.
+    p: Pointer to our source data (the stuff we want to write).
+    buf: The 512-byte buffer representing the disk block.
+    off - (fbn * BSIZE): This calculates the offset within the block.
+    If off is 520 and we are in block 1 (fbn=1, start=512), the relative offset is 520 - 512 = 8.
+    So we write to buf[8].
+    n1: The number of bytes to copy (calculated in step 1).
+    */
     bcopy(p, buf + off - (fbn * BSIZE), n1);
+    /*
+    Goal: Write the modified 512-byte buffer back to the physical disk sector x.
+    Now the disk has the original data (preserved by rsect) plus our new data (added by bcopy).
+    */
     wsect(x, buf);
     n -= n1;
     off += n1;
     p += n1;
   }
-  din.size = xint(off);
-  winode(inum, &din);
+  din.size = xint(off); // Update the file size in the inode
+  winode(inum, &din); // Save the updated inode to disk
 }
