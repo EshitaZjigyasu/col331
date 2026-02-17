@@ -71,7 +71,7 @@ bget(uint dev, uint blockno)
     if(b->refcnt == 0 && (b->flags & B_DIRTY) == 0) {
       b->dev = dev;
       b->blockno = blockno;
-      b->flags = 0;
+      b->flags = 0; // so that we read the value from disk
       b->refcnt = 1;
       return b;
     }
@@ -96,7 +96,7 @@ bread(uint dev, uint blockno)
 void
 bwrite(struct buf *b)
 {
-  b->flags |= B_DIRTY;
+  b->flags |= B_DIRTY; // this is done so that idestart() knows that the request is a write and not a read from the disk
   iderw(b);
 }
 

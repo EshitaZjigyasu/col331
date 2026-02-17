@@ -1,4 +1,4 @@
-// Simple PIO-based (non-DMA) IDE driver code.
+// Simple PIO-based (non-DMA (so interrupt from disk will go to CPU and not to DMA since it does not exist)) IDE driver code.
 
 #include "types.h"
 #include "defs.h"
@@ -100,14 +100,14 @@ ideintr(void)
 {
   struct buf *b;
 
-  // First queued buffer is the active request.
+  // First queued buffer is the active request. So if there is nothing in the queue (idequeue == 0), the interrupt generated is spurious or something similar
   if((b = idequeue) == 0){
     return;
   }
   idequeue = b->qnext;
 
   // Read data if needed.
-  if(!(b->flags & B_DIRTY) && idewait(1) >= 0)
+  if(!(b->flags & B_DIRTY) && idewait(1) >= 0) // buffer was not dirty. we just need to read data from disk to memory
     insl(0x1f0, b->data, BSIZE/4);
 
   b->flags |= B_VALID;
@@ -120,7 +120,7 @@ ideintr(void)
 
 // Sync buf with disk.
 // If B_DIRTY is set, write buf to disk, clear B_DIRTY, set B_VALID.
-// Else if B_VALID is not set, read buf from disk, set B_VALID.
+// Else if B_VALID (ie. that buffer is empty) is not set, read buf from disk, set B_VALID.
 void
 iderw(struct buf *b)
 {
@@ -141,7 +141,7 @@ iderw(struct buf *b)
   if(idequeue == b)
     idestart(b);
 
-  // Wait for request to finish.
+  // Wait for request to finish. for the requests later in the queue, when the interrupt is called for an earlier request, the next one is processed. so the queue progresses through interrupts
   while((b->flags & (B_VALID|B_DIRTY)) != B_VALID)
   {
     // Warning: If we do not call noop(), compiler generates code that does not
