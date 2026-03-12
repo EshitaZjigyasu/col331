@@ -343,7 +343,7 @@ readi(struct inode *ip, char *dst, uint off, uint n)
   struct buf *bp;
 
   if(ip->type == T_DEV){
-    if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].read)
+    if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].read) // if device number not valid or read function not registered
       return -1;
     return devsw[ip->major].read(ip, dst, n);
   }

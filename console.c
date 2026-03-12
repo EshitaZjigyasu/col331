@@ -13,7 +13,7 @@
 static int panicked = 0;
 
 static void
-printint(int xx, int base, int sign)
+printint(int xx, int base, int sign) // printing representation of xx in base "base"
 {
   static char digits[] = "0123456789abcdef";
   char buf[16];
@@ -169,19 +169,22 @@ consoleintr(int (*getc)(void))
 
 int
 consoleread(struct inode *ip, char *dst, int n)
-{
+{ 
+  // ip - inode for the device (console taken as a file here)
+  // dst - destination memory address where the characters will be copied
+  // n - max no. of bytes to read
   uint target;
   int c;
 
   target = n;
   while(n > 0){
-    while(input.r == input.w);
-    c = input.buf[input.r++ % INPUT_BUF];
+    while(input.r == input.w); // waiting for input
+    c = input.buf[input.r++ % INPUT_BUF]; // advance input.r to read the current character
     if(c == C('D')){  // EOF
       if(n < target){
         // Save ^D for next time, to make sure
         // caller gets a 0-byte result.
-        input.r--;
+        input.r--; // do not take ctrl+d in the current read 
       }
       break;
     }

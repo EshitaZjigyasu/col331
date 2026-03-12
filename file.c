@@ -218,7 +218,7 @@ create(char *path, short type, short major, short minor)
   iread(ip);
   ip->major = major;
   ip->minor = minor;
-  ip->nlink = 1;
+  ip->nlink = 1; // setting nlink=1 here
   iupdate(ip);
 
   if(type == T_DIR){  // Create . and .. entries.
@@ -288,7 +288,7 @@ mknod(struct inode *ip, char* path, int major, int minor)
     end_op();
     return -1;
   }
-  iput(ip);
+  iput(ip); // drop a reference to the inode ip (will not be deleted from the filesystem since nlink==1 which was done in the create function)
   end_op();
   return 0;
 }
