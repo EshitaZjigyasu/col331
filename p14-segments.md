@@ -28,9 +28,9 @@ Other memory instructions such as `mov`, `lea` etc are translated using the data
 segment.
 
 Since the contents of GDT are used repeatedly in every address translation, the 
-contents are cached within the segment register. Therefore, segment registers
+contents are cached within the segment register ie. each segment register has a descriptor cache associated with it which stores the segment descriptor when it is first read from the GDT. Therefore, segment registers
 have a visible portion (controlled by the OS) and a hidden portion (cached from
-GDT). This is done so that we don't need to read the GDT at every memory access.
+GDT). This also implies that the size of the segment register is just the size of the segment selector ie. 16 bits because that is what the OS can use and is exposed in the ISA. This is done so that we don't need to read the GDT at every memory access. If the GDT entry is modified, we will have to load the descriptor again from the memory into the descriptor cache.
 
 When we use `info registers` in QEMU's monitor mode, we see both the visible
 portion and the hidden portion. For example, in 
@@ -40,9 +40,9 @@ as per Figure 3.6; i.e, `CS` is pointing to the first entry of GDT. The rest
 address translation.
 
 `info registers` also shows `GDT=00007c60 00000017`. This means that the base of
-GDT is at `7c60` and the size is `0x17=23`. Each entry in GDT is of 8 bytes.
+GDT is at `7c60` and the limit is `0x17=23`. Each entry in GDT is of 8 bytes.
 There are three entries; size locates the last bit of GDT which will be at GDT
-base + 8*3-1(=23). Now in gdb, we can run `x /24xb 0x7c60` to see 24 bytes
+base + 8*3-1(=23) (ie. last bit is at (offset+limit) hence size if (limit+1)). Now in gdb, we can run `x /24xb 0x7c60` to see 24 bytes
 starting at the base address of GDT.
 
 ```
