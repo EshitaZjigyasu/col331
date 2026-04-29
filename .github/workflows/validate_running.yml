@@ -1,0 +1,38 @@
+# Work In progress
+
+name: Validate Running
+
+on:
+  pull_request:
+    branches:
+      - '**'
+    types: [ labeled, unlabeled, assigned, unassigned ]
+  workflow_dispatch:
+    branches:
+      - '**'
+
+jobs:
+  setup:
+    # if: ${{ github.event.label.name == 'bug/fix' }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up GCC
+      uses: egor-tensin/setup-gcc@v2
+      with:
+        version: 11
+        platform: x64
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v4
+
+    - name: Check versions
+      run: |
+        gcc-11 --version || true
+        qemu-system-x86_64 --version || true
+        qemu-system-i386 --version || true
+        ls /usr/bin/qemu* || true
+        ls /proc/sys/fs/binfmt_misc || true
+        make CC=gcc-11 qemu || true

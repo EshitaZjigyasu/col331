@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 *~
 _*
 *.o
@@ -15,3 +16,15 @@ kernelmemfs
 mkfs
 .gdbinit
 .vscode
+=======
+try/
+*.d
+*.o
+*.asm
+bootblock
+kernel
+kernel.sym
+vectors.S
+xv6.img
+.DS_Store
+>>>>>>> 173412588170fccd115b922ae1f45e0193f2714f

@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
 		close(p[0]);
 		close(p[1]);
 
-		// now exec "wc"...
+		// now exec "echo"...
 		char *myargs[3];
 		myargs[0] = strdup("echo");
 		myargs[1] = strdup("i will get printed in capital letters!!");

@@ -1,0 +1,37 @@
+name: Discord PR Notification
+
+on:
+  pull_request_target:
+    # Trigger the workflow when a pull request is closed (merged or not merged) // Shall Filter in scripts/notify.py  
+    types: [closed] 
+  workflow_dispatch: 
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4 # Load the repo to access the scripts/notify.py
+
+      - name: Install Python-Dependencies
+        run:  pip install requests
+
+      - name: Notify Discord by running the script
+        run: python scripts/notify.py
+
+        env:
+          # Setup Webhook
+          WEBHOOK: ${{ secrets.DISCORD }}
+
+          # Event type
+          EVENT_NAME: ${{ github.event_name }}
+
+          # PR data
+          PR_TITLE:      ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL:        ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR:     ${{ github.event.pull_request.user.login }}
+          PR_STATE:      ${{ github.event.pull_request.state }}
+          PR_MERGED:     ${{ github.event.pull_request.merged }}
+          TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
+          
